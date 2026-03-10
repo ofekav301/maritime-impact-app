@@ -70,9 +70,12 @@ def plot_impact_dashboard(ci, feature, event_date):
         marker_color=colors, name='Daily Impact'
     ), row=2, col=1)
 
+# Convert event_date to a string so Plotly can parse it for the x-axis
+    event_date_str = pd.to_datetime(event_date).strftime('%Y-%m-%d')
+
     # Add Vertical Event Lines to both subplots
     for row in [1, 2]:
-        fig.add_vline(x=event_date, line_width=2, line_dash="dash", line_color="black", 
+        fig.add_vline(x=event_date_str, line_width=2, line_dash="dash", line_color="black", 
                       annotation_text="Event" if row==1 else "", row=row, col=1)
     
     fig.update_layout(
