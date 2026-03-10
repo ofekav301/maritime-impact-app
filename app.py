@@ -4,12 +4,12 @@ from datetime import date
 import traceback
 
 from data_loader import fetch_portwatch_countries, preprocess_portwatch_data, get_available_ports
-from causal_model import run_causal_analysis, plot_impact_dashboard
+from sarima_analysis import run_sarima_impact_analysis, plot_sarima_dashboard
 
 st.set_page_config(page_title="Maritime Event Impact", layout="wide")
 
 st.title("🌊 Maritime Event Impact Analyzer")
-st.markdown("Measure the exact impact of geopolitical, weather, or economic events on port activity.")
+st.markdown("Measure the exact impact of geopolitical, weather, or economic events using Auto-SARIMA forecasting.")
 
 # --- SIDEBAR UI ---
 with st.sidebar:
@@ -38,13 +38,15 @@ with st.sidebar:
         feature = st.selectbox("Metric to Analyze:", numeric_cols)
         
         st.header("2. Event Configuration")
-        # Default event date roughly 30 days before the end of the dataset
+        
+        resolution = st.selectbox("Data Resolution:", ["Daily", "Weekly", "Monthly"])
+        
         default_date = processed_df.index.max() - pd.Timedelta(days=30) if not processed_df.empty else date.today()
         event_date = st.date_input("Date of Disruption/Event:", value=default_date)
         
         st.write("Time Windows:")
         pre_months = st.slider("Historical Data to Learn From (Months):", 1, 36, 12, 
-                               help="How much history should the AI use to learn 'normal' behavior?")
+                               help="How much history should the SARIMA model use to learn 'normal' behavior?")
         post_days = st.slider("Time to Measure Impact (Days):", 7, 180, 30,
                               help="How many days after the event do you want to calculate the impact for?")
 
@@ -55,38 +57,50 @@ if raw_df.empty:
     st.info("👈 Please select a country from the sidebar to begin.")
 else:
     if run_btn:
-        with st.spinner(f"Calculating true causal impact on {feature}..."):
+        with st.spinner(f"Training Auto-SARIMA on {resolution} data..."):
             try:
-                ci, pre_period, post_period = run_causal_analysis(
-                    processed_df, feature, event_date, pre_months, post_days
+                # Run the math
+                results = run_sarima_impact_analysis(
+                    processed_df, feature, event_date, pre_months, post_days, resolution
                 )
                 
-                if ci is None:
-                    st.error(f"Analysis failed. Ensure you have enough data before and after the event date. {pre_period}")
+                # Calculate basic impact statistics
+                total_expected = results['forecast'].sum()
+                total_actual = results['test'].sum()
+                absolute_diff = total_actual - total_expected
+                pct_diff = (absolute_diff / total_expected) * 100 if total_expected != 0 else 0
+                
+                # 1. Headline Takeaway
+                st.divider()
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Actual Post-Event", f"{total_actual:,.0f}")
+                col2.metric("Expected (SARIMA)", f"{total_expected:,.0f}")
+                col3.metric("Net Impact", f"{absolute_diff:+,.0f}", f"{pct_diff:+.1f}%")
+                
+                if absolute_diff < 0:
+                    st.error("### 📉 Negative Impact Detected")
                 else:
-                    # 1. Headline Takeaway
-                    st.divider()
-                    p_value = ci.p_value
-                    is_significant = p_value < 0.05
-                    
-                    if is_significant:
-                        st.error(f"### 🚨 Significant Impact Detected")
-                        st.markdown(f"The event on **{event_date}** had a statistically significant impact on **{feature}** (p-value: {p_value:.3f}).")
-                    else:
-                        st.success(f"### ✅ No Significant Impact")
-                        st.markdown(f"Any fluctuations in **{feature}** after **{event_date}** were within normal, expected bounds (p-value: {p_value:.3f}).")
-                    
-                    # 2. Visual Dashboard
-                    st.plotly_chart(plot_impact_dashboard(ci, feature, event_date), use_container_width=True)
-                    
-                    # 3. Plain English Report
-                    st.subheader("📋 Executive Summary")
-                    st.info(ci.summary(output='report'))
-                    
-                    # 4. Raw Numbers
-                    with st.expander("View Mathematical Summary"):
-                        st.text(ci.summary())
+                    st.success("### 📈 Positive / Neutral Impact Detected")
+                
+                # 2. Visual Dashboard
+                st.plotly_chart(plot_sarima_dashboard(results, feature, event_date), use_container_width=True)
+                
+                # 3. Plain English Report
+                st.subheader("📋 Executive Summary")
+                st.markdown(f"""
+                Based on historical trends, the Auto-SARIMA model expected **{total_expected:,.0f}** {feature} 
+                during the {post_days}-day period following the event. 
+                
+                The actual recorded number was **{total_actual:,.0f}**. 
+                This represents a net difference of **{absolute_diff:+,.0f}** ({pct_diff:+.1f}%).
+                """)
+                
+                # 4. Raw Math Details
+                with st.expander("View Auto-SARIMA Model Architecture Details"):
+                    st.text(results['model_summary'])
                         
+            except ValueError as ve:
+                st.warning(f"Data Warning: {ve}")
             except Exception as e:
                 st.error("An error occurred during execution.")
                 st.code(traceback.format_exc())
