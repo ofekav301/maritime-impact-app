@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import traceback
+import tempfile
+import os
+from fpdf import FPDF
 
 from data_loader import fetch_portwatch_countries, preprocess_portwatch_data, get_available_ports
 from sarima_analysis import run_sarima_impact_analysis, plot_sarima_dashboard
@@ -59,49 +62,100 @@ else:
     if run_btn:
         with st.spinner(f"Training Auto-SARIMA on {resolution} data..."):
             try:
-                # Run the math
+                # 1. Run the math
                 results = run_sarima_impact_analysis(
                     processed_df, feature, event_date, pre_months, post_days, resolution
                 )
                 
-                # Calculate basic impact statistics
+                # 2. Calculate impact stats & Confidence Intervals
                 total_expected = results['forecast'].sum()
                 total_actual = results['test'].sum()
                 absolute_diff = total_actual - total_expected
                 pct_diff = (absolute_diff / total_expected) * 100 if total_expected != 0 else 0
                 
-                # 1. Headline Takeaway
+                # Sum the confidence intervals to get the "Normal Bounds"
+                total_lower_bound = results['conf_lower'].sum()
+                total_upper_bound = results['conf_upper'].sum()
+                
                 st.divider()
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Actual Post-Event", f"{total_actual:,.0f}")
-                col2.metric("Expected (SARIMA)", f"{total_expected:,.0f}")
-                col3.metric("Net Impact", f"{absolute_diff:+,.0f}", f"{pct_diff:+.1f}%")
-                
-                if absolute_diff < 0:
-                    st.error("### 📉 Negative Impact Detected")
+
+                # 3. Three-way Headline Logic (Positive, Negative, No Effect)
+                if total_actual > total_upper_bound:
+                    st.markdown(f"<h2 style='color: #2ca02c;'>📈 Positive Impact Detected following {event_date}</h2>", unsafe_allow_html=True)
+                    impact_text = "exceeded the expected upper bounds"
+                elif total_actual < total_lower_bound:
+                    st.markdown(f"<h2 style='color: #d62728;'>📉 Negative Impact Detected following {event_date}</h2>", unsafe_allow_html=True)
+                    impact_text = "fell below the expected lower bounds"
                 else:
-                    st.success("### 📈 Positive / Neutral Impact Detected")
+                    st.markdown(f"<h2 style='color: #7f7f7f;'>➖ No Significant Effect Detected following {event_date}</h2>", unsafe_allow_html=True)
+                    impact_text = "remained within normal expected bounds"
                 
-                # 2. Visual Dashboard
-                st.plotly_chart(plot_sarima_dashboard(results, feature, event_date), use_container_width=True)
+                # 4. Clarified Metrics Block
+                st.caption(f"Measurements represent the **cumulative sum** of {feature} over the {post_days}-day post-event window.")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Cumulative Actual (Sum)", f"{total_actual:,.0f} {feature}")
+                col2.metric("Cumulative Expected (Sum)", f"{total_expected:,.0f} {feature}")
+                col3.metric("Net Impact (Sum)", f"{absolute_diff:+,.0f} {feature}", f"{pct_diff:+.1f}%")
                 
-                # 3. Plain English Report
+                # 5. Visual Dashboard
+                fig = plot_sarima_dashboard(results, feature, event_date, selection, target_port)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # 6. Plain English Report
                 st.subheader("📋 Executive Summary")
-                st.markdown(f"""
-                Based on historical trends, the Auto-SARIMA model expected **{total_expected:,.0f}** {feature} 
-                during the {post_days}-day period following the event. 
+                exec_summary = (
+                    f"Based on historical trends, the Auto-SARIMA model expected a cumulative total of "
+                    f"**{total_expected:,.0f}** {feature} during the {post_days}-day period following the event. "
+                    f"The actual recorded number was **{total_actual:,.0f}**, which {impact_text}. "
+                    f"This represents a net cumulative difference of **{absolute_diff:+,.0f}** ({pct_diff:+.1f}%)."
+                )
+                st.markdown(exec_summary)
                 
-                The actual recorded number was **{total_actual:,.0f}**. 
-                This represents a net difference of **{absolute_diff:+,.0f}** ({pct_diff:+.1f}%).
-                """)
-                
-                # Show the automatically inferred seasonality
                 if results['inferred_m'] > 1:
                     st.info(f"⚙️ **Model Insight:** The AI automatically detected a recurring pattern every **{results['inferred_m']} periods** and adjusted its forecast accordingly.")
-                else:
-                    st.info("⚙️ **Model Insight:** No strong recurring seasonal patterns were detected in the historical data.")
-                
-                # 4. Raw Math Details
+
+                # 7. PDF Report Generation
+                st.subheader("📥 Export")
+                with st.spinner("Generating PDF Report..."):
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("helvetica", "B", 16)
+                    pdf.cell(0, 10, f"Event Impact Report: {selection} - {target_port}", new_x="LMARGIN", new_y="NEXT", align="C")
+                    
+                    pdf.set_font("helvetica", "", 12)
+                    pdf.cell(0, 10, f"Event Date: {event_date} | Metric: {feature} | Resolution: {resolution}", new_x="LMARGIN", new_y="NEXT", align="C")
+                    pdf.ln(5)
+                    
+                    # Print stats to PDF
+                    pdf.set_font("helvetica", "B", 12)
+                    pdf.cell(0, 8, f"Cumulative Actual: {total_actual:,.0f}", new_x="LMARGIN", new_y="NEXT")
+                    pdf.cell(0, 8, f"Cumulative Expected: {total_expected:,.0f}", new_x="LMARGIN", new_y="NEXT")
+                    pdf.cell(0, 8, f"Net Impact: {absolute_diff:+,.0f} ({pct_diff:+.1f}%)", new_x="LMARGIN", new_y="NEXT")
+                    pdf.ln(5)
+                    
+                    # Save Plotly fig to a temporary image and insert into PDF
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                        fig.write_image(tmpfile.name, format="png", engine="kaleido", width=900, height=500)
+                        pdf.image(tmpfile.name, x=10, w=190)
+                    
+                    pdf.ln(5)
+                    pdf.set_font("helvetica", "", 11)
+                    pdf.multi_cell(0, 8, exec_summary.replace("**", "")) # Remove markdown bolding for the PDF
+                    
+                    pdf_bytes = pdf.output()
+                    
+                    # Clean up temp image
+                    if os.path.exists(tmpfile.name):
+                        os.remove(tmpfile.name)
+
+                st.download_button(
+                    label="📄 Download PDF Report",
+                    data=bytes(pdf_bytes),
+                    file_name=f"impact_report_{selection}_{event_date}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
                 with st.expander("View Auto-SARIMA Model Architecture Details"):
                     st.text(results['model_summary'])
                         
