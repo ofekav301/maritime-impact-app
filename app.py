@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-import traceback
 import tempfile
 import os
-from fpdf import FPDF
+import traceback
 
 from data_loader import fetch_portwatch_countries, preprocess_portwatch_data, get_available_ports
 from sarima_analysis import run_sarima_impact_analysis, plot_sarima_dashboard
+from reporting import create_impact_pdf_report
 
 st.set_page_config(page_title="Maritime Event Impact", layout="wide")
 
@@ -41,7 +41,6 @@ with st.sidebar:
         feature = st.selectbox("Metric to Analyze:", numeric_cols)
         
         st.header("2. Event Configuration")
-        
         resolution = st.selectbox("Data Resolution:", ["Daily", "Weekly", "Monthly"])
         
         default_date = processed_df.index.max() - pd.Timedelta(days=30) if not processed_df.empty else date.today()
@@ -62,46 +61,46 @@ else:
     if run_btn:
         with st.spinner(f"Training Auto-SARIMA on {resolution} data..."):
             try:
-                # 1. Run the math
                 results = run_sarima_impact_analysis(
                     processed_df, feature, event_date, pre_months, post_days, resolution
                 )
                 
-                # 2. Calculate impact stats & Confidence Intervals
                 total_expected = results['forecast'].sum()
                 total_actual = results['test'].sum()
                 absolute_diff = total_actual - total_expected
                 pct_diff = (absolute_diff / total_expected) * 100 if total_expected != 0 else 0
                 
-                # Sum the confidence intervals to get the "Normal Bounds"
                 total_lower_bound = results['conf_lower'].sum()
                 total_upper_bound = results['conf_upper'].sum()
                 
                 st.divider()
 
-                # 3. Three-way Headline Logic (Positive, Negative, No Effect)
+                # 3-way Headline Logic
                 if total_actual > total_upper_bound:
                     st.markdown(f"<h2 style='color: #2ca02c;'>📈 Positive Impact Detected following {event_date}</h2>", unsafe_allow_html=True)
                     impact_text = "exceeded the expected upper bounds"
+                    impact_headline = "Positive Impact"
                 elif total_actual < total_lower_bound:
                     st.markdown(f"<h2 style='color: #d62728;'>📉 Negative Impact Detected following {event_date}</h2>", unsafe_allow_html=True)
                     impact_text = "fell below the expected lower bounds"
+                    impact_headline = "Negative Impact"
                 else:
                     st.markdown(f"<h2 style='color: #7f7f7f;'>➖ No Significant Effect Detected following {event_date}</h2>", unsafe_allow_html=True)
                     impact_text = "remained within normal expected bounds"
+                    impact_headline = "No Significant Effect"
                 
-                # 4. Clarified Metrics Block
+                # Metrics Block
                 st.caption(f"Measurements represent the **cumulative sum** of {feature} over the {post_days}-day post-event window.")
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Cumulative Actual (Sum)", f"{total_actual:,.0f} {feature}")
                 col2.metric("Cumulative Expected (Sum)", f"{total_expected:,.0f} {feature}")
                 col3.metric("Net Impact (Sum)", f"{absolute_diff:+,.0f} {feature}", f"{pct_diff:+.1f}%")
                 
-                # 5. Visual Dashboard
+                # Visual Dashboard
                 fig = plot_sarima_dashboard(results, feature, event_date, selection, target_port)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # 6. Plain English Report
+                # Plain English Report
                 st.subheader("📋 Executive Summary")
                 exec_summary = (
                     f"Based on historical trends, the Auto-SARIMA model expected a cumulative total of "
@@ -113,45 +112,32 @@ else:
                 
                 if results['inferred_m'] > 1:
                     st.info(f"⚙️ **Model Insight:** The AI automatically detected a recurring pattern every **{results['inferred_m']} periods** and adjusted its forecast accordingly.")
+                else:
+                    st.info("⚙️ **Model Insight:** No strong recurring seasonal patterns were detected in the historical data.")
 
-                # 7. PDF Report Generation
+                # PDF Report Generation
                 st.subheader("📥 Export")
                 with st.spinner("Generating PDF Report..."):
-                    pdf = FPDF()
-                    pdf.add_page()
-                    pdf.set_font("helvetica", "B", 16)
-                    pdf.cell(0, 10, f"Event Impact Report: {selection} - {target_port}", new_x="LMARGIN", new_y="NEXT", align="C")
-                    
-                    pdf.set_font("helvetica", "", 12)
-                    pdf.cell(0, 10, f"Event Date: {event_date} | Metric: {feature} | Resolution: {resolution}", new_x="LMARGIN", new_y="NEXT", align="C")
-                    pdf.ln(5)
-                    
-                    # Print stats to PDF
-                    pdf.set_font("helvetica", "B", 12)
-                    pdf.cell(0, 8, f"Cumulative Actual: {total_actual:,.0f}", new_x="LMARGIN", new_y="NEXT")
-                    pdf.cell(0, 8, f"Cumulative Expected: {total_expected:,.0f}", new_x="LMARGIN", new_y="NEXT")
-                    pdf.cell(0, 8, f"Net Impact: {absolute_diff:+,.0f} ({pct_diff:+.1f}%)", new_x="LMARGIN", new_y="NEXT")
-                    pdf.ln(5)
-                    
-                    # Save Plotly fig to a temporary image and insert into PDF
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                        fig.write_image(tmpfile.name, format="png", engine="kaleido", width=900, height=500)
-                        pdf.image(tmpfile.name, x=10, w=190)
+                        fig.write_image(tmpfile.name, format="png", engine="kaleido", width=1000, height=550)
+                        img_path = tmpfile.name
+
+                    pdf_bytes = create_impact_pdf_report(
+                        country=selection, port=target_port, feature=feature, 
+                        event_date=event_date, resolution=resolution, 
+                        total_actual=total_actual, total_expected=total_expected, 
+                        absolute_diff=absolute_diff, pct_diff=pct_diff, 
+                        impact_text=impact_headline, exec_summary=exec_summary, 
+                        img_path=img_path
+                    )
                     
-                    pdf.ln(5)
-                    pdf.set_font("helvetica", "", 11)
-                    pdf.multi_cell(0, 8, exec_summary.replace("**", "")) # Remove markdown bolding for the PDF
-                    
-                    pdf_bytes = pdf.output()
-                    
-                    # Clean up temp image
-                    if os.path.exists(tmpfile.name):
-                        os.remove(tmpfile.name)
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
 
                 st.download_button(
                     label="📄 Download PDF Report",
-                    data=bytes(pdf_bytes),
-                    file_name=f"impact_report_{selection}_{event_date}.pdf",
+                    data=pdf_bytes,
+                    file_name=f"ofek_impact_{selection}_{event_date}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
