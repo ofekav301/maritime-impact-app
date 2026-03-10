@@ -3,9 +3,6 @@ from causalimpact import CausalImpact
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-
-
-
 def run_causal_analysis(df, feature, event_date, pre_months, post_days):
     """Runs the Bayesian Structural Time Series model."""
     data = df[[feature]].copy()
@@ -33,8 +30,7 @@ def plot_impact_dashboard(ci, feature, event_date):
     """Generates an interactive Plotly dashboard for the client."""
     inferences = ci.inferences
     
-    # FIX: pycausalimpact doesn't use the 'response' column name.
-    # We reconstruct the actual data mathematically: Actual = Expected + Difference
+    # Reconstruct the actual data mathematically: Actual = Expected + Difference
     actual_y = inferences['preds'] + inferences['point_effects']
     
     fig = make_subplots(
@@ -70,9 +66,10 @@ def plot_impact_dashboard(ci, feature, event_date):
         marker_color=colors, name='Daily Impact'
     ), row=2, col=1)
 
-event_date_str = pd.to_datetime(event_date).strftime('%Y-%m-%d')
+    # Convert event_date to a string so Plotly can parse it for the x-axis
+    event_date_str = pd.to_datetime(event_date).strftime('%Y-%m-%d')
 
-    # Add Vertical Event Lines without the built-in annotation bug
+    # Add Vertical Event Lines to both subplots using the separated text fix
     for row in [1, 2]:
         fig.add_vline(x=event_date_str, line_width=2, line_dash="dash", line_color="black", row=row, col=1)
         
