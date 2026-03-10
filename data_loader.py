@@ -21,6 +21,7 @@ def fetch_portwatch_countries():
                         break
         return dict(sorted(country_links.items()))
     except:
+        # Fallback URL if API fails
         return {"Yemen": "https://data.humdata.org/dataset/yemen-daily-port-activity-data-and-shipment-estimates/resource/5b130c44-8c57-485c-b1bf-6ab07aa12ce9/download/yemen-daily-port-activity-data-and-shipment-estimates.csv"}
 
 def preprocess_portwatch_data(df: pd.DataFrame, target_port: str = "All Ports (Sum)") -> pd.DataFrame:
