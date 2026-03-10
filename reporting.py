@@ -14,7 +14,7 @@ class PDFReport(FPDF):
 
 def create_impact_pdf_report(country, port, feature, event_date, resolution, 
                              total_actual, total_expected, absolute_diff, pct_diff, 
-                             impact_text, exec_summary, img_path) -> bytes:
+                             impact_text, exec_summary, img_path, model_name) -> bytes:
     
     pdf = PDFReport(orientation='P') 
     pdf.add_page()
@@ -26,13 +26,13 @@ def create_impact_pdf_report(country, port, feature, event_date, resolution,
     pdf.cell(0, 6, f"Location: {port}, {country}", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, f"Target Feature Analyzed: {feature} ({resolution} Resolution)", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, f"Event Date: {event_date}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, f"Forecasting Engine: {model_name}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
     pdf.set_font('helvetica', 'B', 12)
     pdf.cell(0, 8, "Cumulative Impact Metrics:", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font('helvetica', '', 11)
     
-    # FIX: Changed '•' to standard '-' to avoid FPDF UnicodeEncodingException
     pdf.cell(0, 6, f"- Actual Post-Event: {total_actual:,.0f}", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, f"- Expected (Counterfactual): {total_expected:,.0f}", new_x="LMARGIN", new_y="NEXT")
     
@@ -49,7 +49,6 @@ def create_impact_pdf_report(country, port, feature, event_date, resolution,
         pdf.ln(5)
     
     pdf.set_font('helvetica', '', 11)
-    # FIX: Ensure any hidden fancy dashes or quotes don't crash it either
     clean_summary = exec_summary.replace("**", "").replace("—", "-").replace("’", "'").replace("“", '"').replace("”", '"')
     pdf.multi_cell(0, 6, clean_summary) 
     
