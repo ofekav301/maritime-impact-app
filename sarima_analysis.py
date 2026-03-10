@@ -5,24 +5,33 @@ import plotly.graph_objects as go
 from statsmodels.tsa.stattools import acf
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.signal import find_peaks
 
 def infer_seasonality(train_series, max_m):
-    """Automatically infers the dominant seasonal period using Autocorrelation."""
+    """Automatically infers the dominant seasonal period using differenced ACF and peak finding."""
     if len(train_series) < max_m * 2:
-        return 1 # Not enough data to infer seasonality reliably
+        return 1 
         
-    # Calculate Autocorrelation Function (ACF)
-    acf_values = acf(train_series, nlags=max_m, fft=True)
+    # 1. Take the first difference to expose the pure seasonal heartbeat
+    diff_series = train_series.diff().dropna()
+    if diff_series.empty:
+        return 1
+        
+    # 2. Calculate ACF on the stationary differenced data
+    acf_values = acf(diff_series, nlags=max_m, fft=True)
+    acf_values[0:2] = 0  # Ignore immediate lag noise
     
-    # Ignore lag 0 (always 1.0) and lag 1 (immediate trend, not seasonality)
-    acf_values[0:2] = 0 
+    # 3. Find true rhythmic peaks, ignoring random background noise
+    peaks, _ = find_peaks(acf_values, prominence=0.15)
     
-    # Find the lag with the highest correlation spike
-    best_m = int(np.argmax(acf_values))
-    
-    # Only use it if the correlation is statistically significant (> 0.2)
-    if acf_values[best_m] > 0.2:
-        return best_m
+    if len(peaks) > 0:
+        # Out of all the rhythmic peaks found, grab the one with the strongest correlation
+        dominant_period = int(max(peaks, key=lambda p: acf_values[p]))
+        
+        # Ensure it's a valid cycle length (> 2) and within our search window
+        if 2 < dominant_period <= max_m:
+            return dominant_period
+            
     return 1
 
 def run_sarima_impact_analysis(df, feature, event_date, pre_months, post_days, resolution):
