@@ -85,7 +85,7 @@ def run_sarima_impact_analysis(df, feature, event_date, pre_months, post_days, r
     }
     return results
 
-def plot_sarima_dashboard(results, feature, event_date):
+def plot_sarima_dashboard(results, feature, event_date, country, port):
     """Generates a connected Plotly chart comparing Actuals to SARIMA Forecast."""
     
     train = results['train']
@@ -101,7 +101,6 @@ def plot_sarima_dashboard(results, feature, event_date):
     ))
     
     # --- FIX THE GAP ---
-    # We grab the very last point of the historical data and prepend it to our future arrays
     anchor_date = [train.index[-1]]
     anchor_val = [train.iloc[-1]]
     
@@ -115,19 +114,19 @@ def plot_sarima_dashboard(results, feature, event_date):
     conf_upper = anchor_val + results['conf_upper'].tolist()
     # -------------------
 
-    # 2. Plot Actual Post-Event Data (using connected array)
+    # 2. Plot Actual Post-Event Data (CHANGED COLOR TO BLACK)
     fig.add_trace(go.Scatter(
         x=test_x, y=test_y, 
-        name='Actual Data (Post-Event)', line=dict(color='#ff7f0e', width=2)
+        name='Actual Data (Post-Event)', line=dict(color='#000000', width=2.5)
     ))
 
-    # 3. Plot SARIMA Forecast (using connected array)
+    # 3. Plot SARIMA Forecast
     fig.add_trace(go.Scatter(
         x=forecast_x, y=forecast_y, 
         name='Expected (SARIMA Forecast)', line=dict(color='#d62728', width=2, dash='dash')
     ))
 
-    # 4. Confidence Interval Shading (using connected array)
+    # 4. Confidence Interval Shading
     fig.add_trace(go.Scatter(
         x=forecast_x + forecast_x[::-1],
         y=conf_upper + conf_lower[::-1],
@@ -137,7 +136,7 @@ def plot_sarima_dashboard(results, feature, event_date):
 
     # 5. Add Vertical Event Line
     event_date_str = pd.to_datetime(event_date).strftime('%Y-%m-%d')
-    fig.add_vline(x=event_date_str, line_width=2, line_dash="dash", line_color="black")
+    fig.add_vline(x=event_date_str, line_width=2, line_dash="dash", line_color="gray")
     
     fig.add_annotation(
         x=event_date_str, y=1.02, yref="paper", 
@@ -153,8 +152,9 @@ def plot_sarima_dashboard(results, feature, event_date):
     
     fig.update_yaxes(range=[min_val - padding, max_val + padding])
 
+    # CHANGED TITLE TO INCLUDE COUNTRY AND PORT
     fig.update_layout(
-        title=f"Impact Analysis: Actual vs. Expected {feature}",
+        title=f"Impact Analysis: {feature} in {port}, {country}",
         height=550, 
         template="plotly_white", 
         hovermode="x unified",
