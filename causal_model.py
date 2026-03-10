@@ -70,13 +70,24 @@ def plot_impact_dashboard(ci, feature, event_date):
         marker_color=colors, name='Daily Impact'
     ), row=2, col=1)
 
-# Convert event_date to a string so Plotly can parse it for the x-axis
-    event_date_str = pd.to_datetime(event_date).strftime('%Y-%m-%d')
+event_date_str = pd.to_datetime(event_date).strftime('%Y-%m-%d')
 
-    # Add Vertical Event Lines to both subplots
+    # Add Vertical Event Lines without the built-in annotation bug
     for row in [1, 2]:
-        fig.add_vline(x=event_date_str, line_width=2, line_dash="dash", line_color="black", 
-                      annotation_text="Event" if row==1 else "", row=row, col=1)
+        fig.add_vline(x=event_date_str, line_width=2, line_dash="dash", line_color="black", row=row, col=1)
+        
+        # Add the text annotation manually to the top chart
+        if row == 1:
+            fig.add_annotation(
+                x=event_date_str, 
+                y=1.02, # Place it just slightly above the chart
+                yref="paper", 
+                text="Event Occurred", 
+                showarrow=False, 
+                xanchor="left",
+                font=dict(color="black", size=12),
+                row=row, col=1
+            )
     
     fig.update_layout(
         height=700, 
