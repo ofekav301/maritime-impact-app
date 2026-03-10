@@ -86,6 +86,21 @@ def plot_impact_dashboard(ci, feature, event_date):
                 row=row, col=1
             )
     
+# 1. Calculate the min and max of JUST the lines (ignoring the shaded intervals)
+    max_val = max(actual_y.max(), inferences['preds'].max())
+    min_val = min(actual_y.min(), inferences['preds'].min())
+    
+    # 2. Add a 15% padding so the lines don't hit the very top/bottom of the chart
+    padding = (max_val - min_val) * 0.15
+    if padding == 0: padding = max_val * 0.15  # Fallback if flat line
+    if padding == 0: padding = 1               # Absolute fallback
+    
+    y_upper = max_val + padding
+    y_lower = min_val - padding
+
+    # 3. Apply the locked range to the top chart (row=1, col=1)
+    fig.update_yaxes(range=[y_lower, y_upper], row=1, col=1)
+
     fig.update_layout(
         height=700, 
         template="plotly_white", 
