@@ -95,6 +95,12 @@ else:
                 This represents a net difference of **{absolute_diff:+,.0f}** ({pct_diff:+.1f}%).
                 """)
                 
+                # Show the automatically inferred seasonality
+                if results['inferred_m'] > 1:
+                    st.info(f"⚙️ **Model Insight:** The AI automatically detected a recurring pattern every **{results['inferred_m']} periods** and adjusted its forecast accordingly.")
+                else:
+                    st.info("⚙️ **Model Insight:** No strong recurring seasonal patterns were detected in the historical data.")
+                
                 # 4. Raw Math Details
                 with st.expander("View Auto-SARIMA Model Architecture Details"):
                     st.text(results['model_summary'])
