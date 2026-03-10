@@ -5,6 +5,7 @@ from plotly.subplots import make_subplots
 
 
 
+
 def run_causal_analysis(df, feature, event_date, pre_months, post_days):
     """Runs the Bayesian Structural Time Series model."""
     data = df[[feature]].copy()
@@ -32,6 +33,10 @@ def plot_impact_dashboard(ci, feature, event_date):
     """Generates an interactive Plotly dashboard for the client."""
     inferences = ci.inferences
     
+    # FIX: pycausalimpact doesn't use the 'response' column name.
+    # We reconstruct the actual data mathematically: Actual = Expected + Difference
+    actual_y = inferences['preds'] + inferences['point_effects']
+    
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, 
         subplot_titles=(f"Actual vs. Expected {feature}", f"Net Daily Impact (Lost/Gained {feature})"),
@@ -41,7 +46,7 @@ def plot_impact_dashboard(ci, feature, event_date):
 
     # Top Chart: Actual vs Expected
     fig.add_trace(go.Scatter(
-        x=inferences.index, y=inferences['response'], 
+        x=inferences.index, y=actual_y, 
         name='Actual Data', line=dict(color='#1f77b4', width=2)
     ), row=1, col=1)
     
