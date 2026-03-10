@@ -6,7 +6,7 @@ import os
 import traceback
 
 from data_loader import fetch_portwatch_countries, preprocess_portwatch_data, get_available_ports
-from sarima_analysis import run_sarima_impact_analysis, plot_sarima_dashboard
+from sarima_analysis import run_sarima_impact_analysis, plot_sarima_dashboard, save_static_plot
 from reporting import create_impact_pdf_report
 
 st.set_page_config(page_title="Maritime Event Impact", layout="wide")
@@ -61,21 +61,24 @@ else:
     if run_btn:
         with st.spinner(f"Training Auto-SARIMA on {resolution} data..."):
             try:
+                # 1. Run the math
                 results = run_sarima_impact_analysis(
                     processed_df, feature, event_date, pre_months, post_days, resolution
                 )
                 
+                # 2. Calculate impact stats & Confidence Intervals
                 total_expected = results['forecast'].sum()
                 total_actual = results['test'].sum()
                 absolute_diff = total_actual - total_expected
                 pct_diff = (absolute_diff / total_expected) * 100 if total_expected != 0 else 0
                 
+                # Sum the confidence intervals to get the "Normal Bounds"
                 total_lower_bound = results['conf_lower'].sum()
                 total_upper_bound = results['conf_upper'].sum()
                 
                 st.divider()
 
-                # 3-way Headline Logic
+                # 3. Three-way Headline Logic (Positive, Negative, No Effect)
                 if total_actual > total_upper_bound:
                     st.markdown(f"<h2 style='color: #2ca02c;'>📈 Positive Impact Detected following {event_date}</h2>", unsafe_allow_html=True)
                     impact_text = "exceeded the expected upper bounds"
@@ -89,18 +92,18 @@ else:
                     impact_text = "remained within normal expected bounds"
                     impact_headline = "No Significant Effect"
                 
-                # Metrics Block
+                # 4. Clarified Metrics Block
                 st.caption(f"Measurements represent the **cumulative sum** of {feature} over the {post_days}-day post-event window.")
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Cumulative Actual (Sum)", f"{total_actual:,.0f} {feature}")
                 col2.metric("Cumulative Expected (Sum)", f"{total_expected:,.0f} {feature}")
                 col3.metric("Net Impact (Sum)", f"{absolute_diff:+,.0f} {feature}", f"{pct_diff:+.1f}%")
                 
-                # Visual Dashboard
+                # 5. Visual Dashboard (Interactive Plotly for the Web UI)
                 fig = plot_sarima_dashboard(results, feature, event_date, selection, target_port)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Plain English Report
+                # 6. Plain English Report
                 st.subheader("📋 Executive Summary")
                 exec_summary = (
                     f"Based on historical trends, the Auto-SARIMA model expected a cumulative total of "
@@ -115,12 +118,15 @@ else:
                 else:
                     st.info("⚙️ **Model Insight:** No strong recurring seasonal patterns were detected in the historical data.")
 
-                # PDF Report Generation
+                # 7. PDF Report Generation
                 st.subheader("📥 Export")
                 with st.spinner("Generating PDF Report..."):
+                    
+                    # Temporarily save the MATPLOTLIB static chart as a PNG
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                        fig.write_image(tmpfile.name, format="png", engine="kaleido", width=1000, height=550)
                         img_path = tmpfile.name
+                        # Using our fallback matplotlib function to avoid Kaleido/Chromium issues!
+                        save_static_plot(results, feature, event_date, selection, target_port, img_path)
 
                     pdf_bytes = create_impact_pdf_report(
                         country=selection, port=target_port, feature=feature, 
@@ -131,6 +137,7 @@ else:
                         img_path=img_path
                     )
                     
+                    # Clean up the temporary image
                     if os.path.exists(img_path):
                         os.remove(img_path)
 
