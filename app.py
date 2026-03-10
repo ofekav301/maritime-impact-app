@@ -113,10 +113,8 @@ else:
                 )
                 st.markdown(exec_summary)
                 
-                if results['inferred_m'] > 1:
-                    st.info(f"⚙️ **Model Insight:** The AI automatically detected a recurring pattern every **{results['inferred_m']} periods** and adjusted its forecast accordingly.")
-                else:
-                    st.info("⚙️ **Model Insight:** No strong recurring seasonal patterns were detected in the historical data.")
+                # Prophet-specific Model Insight
+                st.info("⚙️ **Model Insight:** The Prophet engine automatically modeled overlapping seasonal cycles (like weekly and yearly trends) to generate this counterfactual forecast.")
 
                 # 7. PDF Report Generation
                 st.subheader("📥 Export")
