@@ -6,7 +6,7 @@ import os
 import traceback
 
 from data_loader import fetch_portwatch_countries, preprocess_portwatch_data, get_available_ports
-from sarima_analysis import run_sarima_impact_analysis, plot_sarima_dashboard, save_static_plot
+from prophet_analysis import run_prophet_impact_analysis, plot_impact_dashboard, save_static_plot
 from reporting import create_impact_pdf_report
 
 st.set_page_config(page_title="Maritime Event Impact", layout="wide")
@@ -62,7 +62,7 @@ else:
         with st.spinner(f"Training Auto-SARIMA on {resolution} data..."):
             try:
                 # 1. Run the math
-                results = run_sarima_impact_analysis(
+                results = run_prophet_impact_analysis(
                     processed_df, feature, event_date, pre_months, post_days, resolution
                 )
                 
@@ -100,7 +100,7 @@ else:
                 col3.metric("Net Impact (Sum)", f"{absolute_diff:+,.0f} {feature}", f"{pct_diff:+.1f}%")
                 
                 # 5. Visual Dashboard (Interactive Plotly for the Web UI)
-                fig = plot_sarima_dashboard(results, feature, event_date, selection, target_port)
+                fig = plot_impact_dashboard(results, feature, event_date, selection, target_port)
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # 6. Plain English Report
