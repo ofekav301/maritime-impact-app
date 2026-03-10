@@ -3,6 +3,8 @@ import numpy as np
 import pmdarima as pm
 import plotly.graph_objects as go
 from statsmodels.tsa.stattools import acf
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def infer_seasonality(train_series, max_m):
     """Automatically infers the dominant seasonal period using Autocorrelation."""
@@ -161,3 +163,59 @@ def plot_sarima_dashboard(results, feature, event_date, country, port):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     return fig
+
+def save_static_plot(results, feature, event_date, country, port, save_path):
+    """Generates a static matplotlib chart exclusively for the PDF export."""
+    train = results['train']
+    test = results['test']
+    forecast = results['forecast']
+    
+    # Bridge the visual gap
+    anchor_date = [train.index[-1]]
+    anchor_val = [train.iloc[-1]]
+    
+    test_x = anchor_date + test.index.tolist()
+    test_y = anchor_val + test.values.tolist()
+    
+    forecast_x = anchor_date + forecast.index.tolist()
+    forecast_y = anchor_val + forecast.values.tolist()
+    
+    conf_lower = anchor_val + results['conf_lower'].tolist()
+    conf_upper = anchor_val + results['conf_upper'].tolist()
+
+    # Create the Plot
+    plt.figure(figsize=(10, 5))
+    sns.set_style("whitegrid")
+    
+    # 1. Historical
+    plt.plot(train.index, train.values, label='Historical Data', color='#1f77b4', linewidth=2)
+    
+    # 2. Actual Post-Event
+    plt.plot(test_x, test_y, label='Actual Data', color='#000000', linewidth=2.5)
+    
+    # 3. Forecast
+    plt.plot(forecast_x, forecast_y, label='Expected (SARIMA)', color='#d62728', linewidth=2, linestyle='--')
+    
+    # 4. Confidence Intervals
+    plt.fill_between(forecast_x, conf_lower, conf_upper, color='#d62728', alpha=0.15, label='95% CI')
+    
+    # 5. Event Line
+    event_dt = pd.to_datetime(event_date)
+    plt.axvline(x=event_dt, color='gray', linestyle='--', linewidth=2)
+    plt.text(event_dt, plt.ylim()[1], ' Event', color='black', ha='left', va='top')
+    
+    # Y-axis bounds
+    max_val = max(train.max(), test.max(), forecast.max())
+    min_val = min(train.min(), test.min(), forecast.min())
+    padding = (max_val - min_val) * 0.15 if (max_val - min_val) != 0 else max_val * 0.15
+    if padding == 0: padding = 1
+    plt.ylim(min_val - padding, max_val + padding)
+    
+    # Formatting
+    plt.title(f"Impact Analysis: {feature} in {port}, {country}", fontsize=14, fontweight='bold')
+    plt.legend(loc='best')
+    plt.tight_layout()
+    
+    # Save to the temporary path provided by Streamlit
+    plt.savefig(save_path, format='png', dpi=150, bbox_inches='tight')
+    plt.close()
