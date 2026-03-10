@@ -21,7 +21,6 @@ def fetch_portwatch_countries():
                         break
         return dict(sorted(country_links.items()))
     except:
-        # Fallback URL if API fails
         return {"Yemen": "https://data.humdata.org/dataset/yemen-daily-port-activity-data-and-shipment-estimates/resource/5b130c44-8c57-485c-b1bf-6ab07aa12ce9/download/yemen-daily-port-activity-data-and-shipment-estimates.csv"}
 
 def preprocess_portwatch_data(df: pd.DataFrame, target_port: str = "All Ports (Sum)") -> pd.DataFrame:
@@ -31,7 +30,6 @@ def preprocess_portwatch_data(df: pd.DataFrame, target_port: str = "All Ports (S
         
     df_clean = df.copy()
     
-    # 1. Handle date column
     if 'date' in df_clean.columns:
         df_clean['date'] = pd.to_datetime(df_clean['date']).dt.tz_localize(None)
         df_clean = df_clean.set_index('date')
@@ -41,17 +39,14 @@ def preprocess_portwatch_data(df: pd.DataFrame, target_port: str = "All Ports (S
         except Exception:
             raise ValueError("Dataframe must contain a recognizable date column or index.")
             
-    # 2. Filter by port
     if target_port != "All Ports (Sum)" and 'portname' in df_clean.columns:
         df_clean = df_clean[df_clean['portname'] == target_port]
         
-    # 3. Aggregate numeric features
     exclude_cols = ['year', 'month', 'day', 'unnamed: 0']
     numeric_cols = [c for c in df_clean.select_dtypes(include='number').columns if c.lower() not in exclude_cols]
     
     df_agg = df_clean.groupby(df_clean.index)[numeric_cols].sum()
     
-    # 4. Enforce continuous daily frequency (Fill empty days with 0)
     if not df_agg.empty:
         df_agg.index = df_agg.index.normalize()
         df_agg = df_agg.groupby(df_agg.index).sum()
